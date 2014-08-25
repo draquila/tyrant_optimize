@@ -7,7 +7,7 @@ DISTNAME := $(MAIN)-$(DISTVERSION)
 
 CXX := g++-4.8
 CPPFLAGS := -Wall -Werror -std=gnu++11 -O3 -I/usr/local/include -Wno-deprecated-register
-LDFLAGS := -lboost_system-mt -lboost_thread-mt -lboost_filesystem-mt -lboost_regex-mt -L/usr/local/lib -static
+LDFLAGS := /usr/local/lib/libboost_{system,thread,filesystem,regex}-mt.a
 
 all: $(MAIN)
 
@@ -30,3 +30,9 @@ dist/$(DISTNAME).zip: $(MAIN)
 	rm -f dist/$(DISTNAME)/data/Makefile
 	cp -a rapidxml_license.txt dist/$(DISTNAME)
 	cd dist && zip -r $(DISTNAME).zip $(DISTNAME)
+
+distclean: clean
+	rm -rf dist
+
+.PHONY:
+	clean distclean
