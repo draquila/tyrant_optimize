@@ -2,13 +2,16 @@ MAIN := tu_optimize
 SRCS := $(wildcard *.cpp)
 OBJS := $(patsubst %.cpp,obj/%.o,$(SRCS))
 INCS := $(wildcard *.h)
+DISTVERSION := 2.1.2
+DISTNAME := $(MAIN)-$(DISTVERSION)
 
+CXX := g++-4.8
 CPPFLAGS := -Wall -Werror -std=gnu++11 -O3 -I/usr/local/include -Wno-deprecated-register
 LDFLAGS := -lboost_system-mt -lboost_thread-mt -lboost_filesystem-mt -lboost_regex-mt -L/usr/local/lib
 
 all: $(MAIN)
 
-obj/%.o: %.cpp ${INCS} obj
+obj/%.o: %.cpp ${INCS}
 	$(CXX) $(CPPFLAGS) -o $@ -c $<
 
 $(MAIN): $(OBJS)
@@ -16,3 +19,14 @@ $(MAIN): $(OBJS)
 
 clean:
 	rm -f $(MAIN) obj/*.o
+
+release: dist/$(DISTNAME).zip
+
+dist/$(DISTNAME).zip: $(MAIN)
+	rm -rf dist
+	mkdir -p dist/$(DISTNAME)
+	cp $(MAIN) dist/$(DISTNAME)
+	cp -a data dist/$(DISTNAME)
+	rm -f dist/$(DISTNAME)/data/Makefile
+	cp -a rapidxml_license.txt dist/$(DISTNAME)
+	cd dist && zip -r $(DISTNAME).zip $(DISTNAME)
