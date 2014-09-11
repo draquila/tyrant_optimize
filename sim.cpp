@@ -663,6 +663,7 @@ void turn_end_phase(Field* fd)
             status.m_weakened = 0;
             status.m_step = CardStep::none;
             status.m_inhibited = 0;
+            status.m_valor = 0;
             unsigned poison_dmg = safe_minus(status.m_poisoned, status.protected_value());
             if(poison_dmg > 0)
             {
