@@ -1,4 +1,4 @@
-MAIN := tu_optimize
+MAIN := tyrant_optimize
 SRCS := $(wildcard *.cpp)
 OBJS := $(patsubst %.cpp,obj/%.o,$(SRCS))
 INCS := $(wildcard *.h)
@@ -7,7 +7,7 @@ DISTNAME := $(MAIN)-$(DISTVERSION)
 
 CXX := g++-4.8
 CPPFLAGS := -Wall -Werror -std=gnu++11 -O3 -I/usr/local/include -Wno-deprecated-register
-LDFLAGS := /usr/local/lib/libboost_{system,thread,filesystem,regex}-mt.a
+LDFLAGS := /usr/local/lib/libboost_{system,thread,filesystem,regex}-mt.a /usr/local/Cellar/gcc48/4.8.3/lib/gcc/x86_64-apple-darwin10.8.0/4.8.3/libstdc++.a
 
 all: $(MAIN)
 
