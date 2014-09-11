@@ -785,9 +785,6 @@ struct PerformAttack
     void op()
     {
         unsigned pre_modifier_dmg = attack_power(att_status);
-        // valor - this has to happen before the next check so it will still attack with 0 base attack
-        //apply_valor<def_cardtype>(pre_modifier_dmg);
-
         if(pre_modifier_dmg == 0) { return; }
         // Evaluation order:
         // modify damage
