@@ -94,6 +94,7 @@ inline void CardStatus::set(const Card& card)
     m_protected = 0;
     m_rallied = 0;
     m_weakened = 0;
+    m_valor = 0;
     m_step = CardStep::none;
     std::memset(m_enhanced_value, 0, sizeof m_enhanced_value);
     std::memset(m_skill_cd, 0, sizeof m_skill_cd);
@@ -101,7 +102,7 @@ inline void CardStatus::set(const Card& card)
 //------------------------------------------------------------------------------
 inline int attack_power(CardStatus* att)
 {
-    return(safe_minus(att->m_card->m_attack + att->m_berserk + att->m_rallied, att->m_weakened + att->m_corroded_weakened));
+    return(safe_minus(att->m_card->m_attack + att->m_berserk + att->m_rallied + att->m_valor, att->m_weakened + att->m_corroded_weakened));
 }
 //------------------------------------------------------------------------------
 std::string skill_description(const Cards& cards, const SkillSpec& s)
@@ -167,6 +168,7 @@ std::string CardStatus::description()
             if(m_rallied > 0) { att_desc += "+" + to_string(m_rallied) + "(rallied)"; }
             if(m_weakened > 0) { att_desc += "-" + to_string(m_weakened) + "(weakened)"; }
             if(m_corroded_weakened > 0) { att_desc += "-" + to_string(m_corroded_weakened) + "(corroded)"; }
+            if(m_valor > 0) { att_desc += "+" + to_string(m_valor) + "(valor)"; }
             if(!att_desc.empty()) { desc += att_desc + "=" + to_string(attack_power(this)); }
         }
     case CardType::structure:
@@ -473,30 +475,38 @@ Results<uint64_t> play(Field* fd)
         ++fd->turn;
     }
     unsigned raid_damage = 15 + fd->n_player_kills - (10 * fd->players[1]->commander.m_hp / fd->players[1]->commander.m_card->m_health);
+    unsigned brawl_score = 50 + fd->n_player_kills * 2 - fd->turn / 2;  // Note that turn is +1, which is intentional
     // you lose
     if(fd->players[0]->commander.m_hp == 0)
     {
         _DEBUG_MSG(1, "You lose.\n");
-        if (fd->optimization_mode == OptimizationMode::raid)
-        { return {0, 0, 1, raid_damage, 0}; }
-        else
-        { return {0, 0, 1, 0, 0}; }
+        switch (fd->optimization_mode)
+        {
+        case OptimizationMode::raid: return {0, 0, 1, raid_damage, 0};
+        case OptimizationMode::brawl: return {0, 0, 1, 5, 0};
+        default: return {0, 0, 1, 0, 0};
+        }
     }
     // you win
     if(fd->players[1]->commander.m_hp == 0)
     {
         _DEBUG_MSG(1, "You win.\n");
-        return {1, 0, 0, 100, 0};
+        switch (fd->optimization_mode)
+        {
+        case OptimizationMode::brawl: return {1, 0, 0, brawl_score, 0};
+        default: return {1, 0, 0, 100, 0};
+        }
     }
     if (fd->turn > turn_limit)
     {
         _DEBUG_MSG(1, "Stall after %u turns.\n", turn_limit);
-        if (fd->optimization_mode == OptimizationMode::defense)
-        { return {1, 1, 0, 100, 0}; }
-        else if (fd->optimization_mode == OptimizationMode::raid)
-        { return {0, 1, 0, raid_damage, 0}; }
-        else
-        { return {0, 1, 0, 0, 0}; }
+        switch (fd->optimization_mode)
+        {
+        case OptimizationMode::defense: return {1, 1, 0, 100, 0};
+        case OptimizationMode::raid: return {0, 1, 0, raid_damage, 0};
+        case OptimizationMode::brawl: return {0, 1, 0, 5, 0};
+        default: return {0, 1, 0, 0, 0};
+        }
     }
 
     // Huh? How did we get here?
@@ -775,6 +785,9 @@ struct PerformAttack
     void op()
     {
         unsigned pre_modifier_dmg = attack_power(att_status);
+        // valor - this has to happen before the next check so it will still attack with 0 base attack
+        //apply_valor<def_cardtype>(pre_modifier_dmg);
+
         if(pre_modifier_dmg == 0) { return; }
         // Evaluation order:
         // modify damage
@@ -931,7 +944,7 @@ bool attack_phase(Field* fd)
     Storage<CardStatus>& def_assaults(fd->tip->assaults);
     if(attack_power(att_status) == 0)
     {
-        return false; 
+        return false;
     }
 
     if (alive_assault(def_assaults, fd->current_ci))
@@ -985,6 +998,18 @@ template<>
 inline bool skill_predicate<jam>(Field* fd, CardStatus* src, CardStatus* dst, const SkillSpec& s)
 {
     return can_act(dst) && is_active_next_turn(dst);
+}
+
+// valor "targets" opposing assault if my attack is lower than their attack
+template<>
+inline bool skill_predicate<valor>(Field* fd, CardStatus* src, CardStatus* dst, const SkillSpec& s) {
+    Storage<CardStatus>& def_assaults(fd->tip->assaults);
+    if (alive_assault(def_assaults, fd->current_ci))
+    {
+        bool is_opposite = (dst == &fd->tip->assaults[fd->current_ci]);
+        return (is_opposite && (attack_power(src) < attack_power(dst)));
+    }
+    return false;
 }
 
 template<>
@@ -1094,6 +1119,12 @@ inline void perform_skill<weaken>(Field* fd, CardStatus* src, CardStatus* dst, c
     dst->m_weakened += s.x;
 }
 
+template<>
+inline void perform_skill<valor>(Field* fd, CardStatus* src, CardStatus* dst, const SkillSpec& s)
+{
+    src->m_valor += s.x;
+}
+
 template<unsigned skill_id>
 inline unsigned select_fast(Field* fd, CardStatus* src_status, const std::vector<CardStatus*>& cards, const SkillSpec& s)
 {
@@ -1159,6 +1190,9 @@ template<> std::vector<CardStatus*>& skill_targets<strike>(Field* fd, CardStatus
 { return(skill_targets_hostile_assault(fd, src_status)); }
 
 template<> std::vector<CardStatus*>& skill_targets<weaken>(Field* fd, CardStatus* src_status)
+{ return(skill_targets_hostile_assault(fd, src_status)); }
+
+template<> std::vector<CardStatus*>& skill_targets<valor>(Field* fd, CardStatus* src_status)
 { return(skill_targets_hostile_assault(fd, src_status)); }
 
 template<> std::vector<CardStatus*>& skill_targets<siege>(Field* fd, CardStatus* src_status)
@@ -1242,6 +1276,17 @@ void perform_targetted_allied_fast(Field* fd, CardStatus* src_status, const Skil
     }
 }
 
+template<Skill skill_id>
+void perform_self_opposing(Field* fd, CardStatus* src_status, const SkillSpec& s)
+{
+    select_targets<skill_id>(fd, src_status, s);
+    // assuming valor cannot be inhibited or evaded
+    for (CardStatus *c: fd->selection_array)
+    {
+        check_and_perform_skill<skill_id>(fd, src_status, c, s, false);
+    }
+}
+
 //------------------------------------------------------------------------------
 void fill_skill_table()
 {
@@ -1256,4 +1301,5 @@ void fill_skill_table()
     skill_table[siege] = perform_targetted_hostile_fast<siege>;
     skill_table[strike] = perform_targetted_hostile_fast<strike>;
     skill_table[weaken] = perform_targetted_hostile_fast<weaken>;
+    skill_table[valor] = perform_self_opposing<valor>;
 }
